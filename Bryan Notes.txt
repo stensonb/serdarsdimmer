@@ -1,0 +1,7 @@
+# https://openocd.org/doc/doxygen/html/stm32f1x_8c.html
+# openocd for stm32f103c8t6 card
+openocd -f interface/stlink.cfg -f target/stm32f1x.cfg
+
+
+# start gdb
+gdb -x openocd.gdb target/thumbv7m-none-eabi/debug/foobear
