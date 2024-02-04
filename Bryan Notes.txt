@@ -5,3 +5,5 @@ openocd -f interface/stlink.cfg -f target/stm32f1x.cfg
 
 # start gdb
 gdb -x openocd.gdb target/thumbv7m-none-eabi/debug/foobear
+
+once in gdb, "load" loads the last "cargo build" to the MCU
