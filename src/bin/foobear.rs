@@ -5,7 +5,7 @@
 
 use panic_rtt_target as _;
 use rtic::app;
-use rtt_target::{rprintln, rtt_init_print};
+use rtt_target::{debug_rtt_init_print, debug_rprintln};
 use stm32f1xx_hal::adc;
 use stm32f1xx_hal::gpio::PinState;
 
@@ -58,8 +58,8 @@ mod app {
         let mono = Systick::new(cx.core.SYST, 36_000_000);
 
         // todo: where is this printing?!
-        rtt_init_print!();
-        rprintln!("init");
+        debug_rtt_init_print!();
+        debug_rprintln!("init");
 
         // todo: all hprintln!() can go away if we can get rprintln!() to print in openocd console via gdb
         hprintln!("init");
