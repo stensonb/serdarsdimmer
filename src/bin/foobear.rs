@@ -6,8 +6,8 @@
 use panic_rtt_target as _;
 use rtic::app;
 use rtt_target::{debug_rtt_init_print, debug_rprintln};
-use stm32f1xx_hal::adc;
-use stm32f1xx_hal::gpio::PinState;
+use stm32f1xx_hal::{adc, pac};
+use stm32f1xx_hal::gpio::{Analog, Pin, PinState};
 
 use stm32f1xx_hal::gpio::{gpioc::PC13, Output, PushPull};
 use stm32f1xx_hal::prelude::*;
@@ -15,6 +15,8 @@ use systick_monotonic::{fugit::Duration, Systick};
 
 //
 use cortex_m_semihosting::*;
+
+const HIGH_POT_SENSITIVITY: u16 = 30; // higher value makes pot less sensitive
 
 #[app(device = stm32f1xx_hal::pac, peripherals = true, dispatchers = [SPI1])]
 mod app {
@@ -38,10 +40,10 @@ mod app {
     struct Local {
         led: PC13<Output<PushPull>>,
         state: bool,
-        /*
+
         high_pot_adc: adc::Adc<pac::ADC1>,
         high_pot_chan: Pin<'B', 0, Analog>, // pb0 on board
-         */
+        high_pot_last_value: u16,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -59,7 +61,7 @@ mod app {
 
         // todo: where is this printing?!
         debug_rtt_init_print!();
-        debug_rprintln!("init");
+        debug_rprintln!("init yay");
 
         // todo: all hprintln!() can go away if we can get rprintln!() to print in openocd console via gdb
         hprintln!("init");
@@ -79,22 +81,22 @@ mod app {
             .into_push_pull_output_with_state(&mut gpioc.crh, PinState::Low);
 
         // Setup ADC
-        let mut adc1 = adc::Adc::adc1(p.ADC1, _clocks);
+        let adc1 = adc::Adc::adc1(p.ADC1, _clocks);
 
         // Setup GPIOB
         let mut gpiob = p.GPIOB.split();
 
         // Configure pb0 as an analog input
-        let mut ch0 = gpiob.pb0.into_analog(&mut gpiob.crl);
+        let ch0 = gpiob.pb0.into_analog(&mut gpiob.crl);
 
-        let data: u16 = adc1.read(&mut ch0).unwrap();
-        hprintln!("adc1: {}", data);
+        let high_pot_last_value: u16 = 0;
 
         // Schedule the blinking task
         blink::spawn_after(Duration::<u64, 1, 1000>::from_ticks(1000)).unwrap();
 
-        // schedule printing pot_value
-        //output_pot_values::spawn().unwrap();
+        // schedule printing high_pot_value
+        output_pot_values::spawn().unwrap();
+
 
         (
             Shared {
@@ -106,15 +108,16 @@ mod app {
                 /*
                 high_pot_adc: adc1,
                 high_pot_chan: ch0,
-                 */
+ */
             },
             Local {
                 led,
                 state: false,
-                /*
+
                 high_pot_adc: adc1,
                 high_pot_chan: ch0,
-                 */
+                high_pot_last_value: high_pot_last_value,
+
             },
             init::Monotonics(mono),
         )
@@ -133,14 +136,16 @@ mod app {
         blink::spawn_after(Duration::<u64, 1, 1000>::from_ticks(250)).unwrap();
     }
 
-    /*
-    #[task(local = [high_pot_adc, high_pot_chan])]
+    #[task(local = [high_pot_adc, high_pot_chan, high_pot_last_value])]
     fn output_pot_values(cx: output_pot_values::Context) {
         // schedule this again here to ignore how long this actually takes
-        output_pot_values::spawn_after(Duration::<u64, 1, 1000>::from_ticks(2000)).unwrap();
+        output_pot_values::spawn_after(Duration::<u64, 1, 1000>::from_ticks(100)).unwrap();
 
         let data: u16 = cx.local.high_pot_adc.read(cx.local.high_pot_chan).unwrap();
-        hprintln!("adc1: {}", data);
+
+        if (cx.local.high_pot_last_value.abs_diff(data)) > HIGH_POT_SENSITIVITY {
+            *cx.local.high_pot_last_value = data;
+            hprintln!("high_pot_value: {}", data);
+        }
     }
-             */
 }
