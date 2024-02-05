@@ -64,7 +64,7 @@ mod app {
         debug_rprintln!("init yay");
 
         // todo: all hprintln!() can go away if we can get rprintln!() to print in openocd console via gdb
-        hprintln!("init");
+        hprintln!("initializing clocks...");
 
         let _clocks = rcc
             .cfgr
@@ -90,6 +90,8 @@ mod app {
         let ch0 = gpiob.pb0.into_analog(&mut gpiob.crl);
 
         let high_pot_last_value: u16 = 0;
+
+        hprintln!("scheduling tasks...");
 
         // Schedule the blinking task
         blink::spawn_after(Duration::<u64, 1, 1000>::from_ticks(1000)).unwrap();
