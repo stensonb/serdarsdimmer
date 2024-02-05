@@ -7,3 +7,10 @@ openocd -f interface/stlink.cfg -f target/stm32f1x.cfg
 gdb -x openocd.gdb target/thumbv7m-none-eabi/debug/foobear
 
 once in gdb, "load" loads the last "cargo build" to the MCU
+
+
+
+
+# with 2 148 Ohm resisters in series:
+"MAX" (turned "up" all the way) - 0
+"MIN" (turned "down" all the way) - 4092

@@ -6,7 +6,9 @@
 use panic_rtt_target as _;
 use rtic::app;
 use rtt_target::{rprintln, rtt_init_print};
+use stm32f1xx_hal::adc;
 use stm32f1xx_hal::gpio::PinState;
+
 use stm32f1xx_hal::gpio::{gpioc::PC13, Output, PushPull};
 use stm32f1xx_hal::prelude::*;
 use systick_monotonic::{fugit::Duration, Systick};
@@ -20,6 +22,7 @@ mod app {
 
     #[shared]
     struct Shared {
+        /*
         #[lock_free]
         high_pot_value: bool,  // <- lock-free shared resource
 
@@ -28,12 +31,17 @@ mod app {
 
         #[lock_free]
         cycle_pot_value: bool,  // <- lock-free shared resource
+        */
     }
 
     #[local]
     struct Local {
         led: PC13<Output<PushPull>>,
         state: bool,
+        /*
+        high_pot_adc: adc::Adc<pac::ADC1>,
+        high_pot_chan: Pin<'B', 0, Analog>, // pb0 on board
+         */
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -41,16 +49,18 @@ mod app {
 
     #[init]
     fn init(cx: init::Context) -> (Shared, Local, init::Monotonics) {
+        let p = cx.device;
+
         // Setup clocks
-        let mut flash = cx.device.FLASH.constrain();
-        let rcc = cx.device.RCC.constrain();
+        let mut flash = p.FLASH.constrain();
+        let rcc = p.RCC.constrain();
 
         let mono = Systick::new(cx.core.SYST, 36_000_000);
 
         // todo: where is this printing?!
         rtt_init_print!();
         rprintln!("init");
-        
+
         // todo: all hprintln!() can go away if we can get rprintln!() to print in openocd console via gdb
         hprintln!("init");
 
@@ -59,27 +69,53 @@ mod app {
             .use_hse(8.MHz())
             .sysclk(36.MHz())
             .pclk1(36.MHz())
+            .adcclk(2.MHz())
             .freeze(&mut flash.acr);
 
         // Setup LED
-        let mut gpioc = cx.device.GPIOC.split();
+        let mut gpioc = p.GPIOC.split();
         let led = gpioc
             .pc13
             .into_push_pull_output_with_state(&mut gpioc.crh, PinState::Low);
+
+        // Setup ADC
+        let mut adc1 = adc::Adc::adc1(p.ADC1, _clocks);
+
+        // Setup GPIOB
+        let mut gpiob = p.GPIOB.split();
+
+        // Configure pb0 as an analog input
+        let mut ch0 = gpiob.pb0.into_analog(&mut gpiob.crl);
+
+        let data: u16 = adc1.read(&mut ch0).unwrap();
+        hprintln!("adc1: {}", data);
 
         // Schedule the blinking task
         blink::spawn_after(Duration::<u64, 1, 1000>::from_ticks(1000)).unwrap();
 
         // schedule printing pot_value
-        output_pot_values::spawn().unwrap();
+        //output_pot_values::spawn().unwrap();
 
         (
-            Shared { 
+            Shared {
+                /*
                 high_pot_value: false,
                 low_pot_value: false,
                 cycle_pot_value: false,
+                */
+                /*
+                high_pot_adc: adc1,
+                high_pot_chan: ch0,
+                 */
             },
-            Local { led, state: false },
+            Local {
+                led,
+                state: false,
+                /*
+                high_pot_adc: adc1,
+                high_pot_chan: ch0,
+                 */
+            },
             init::Monotonics(mono),
         )
     }
@@ -97,18 +133,14 @@ mod app {
         blink::spawn_after(Duration::<u64, 1, 1000>::from_ticks(250)).unwrap();
     }
 
-    
-    #[task(shared = [high_pot_value, low_pot_value, cycle_pot_value])]
+    /*
+    #[task(local = [high_pot_adc, high_pot_chan])]
     fn output_pot_values(cx: output_pot_values::Context) {
         // schedule this again here to ignore how long this actually takes
         output_pot_values::spawn_after(Duration::<u64, 1, 1000>::from_ticks(2000)).unwrap();
 
-        // no need to lock this
-        hprintln!("high_pot_value = {}\nlow_pot_value = {}\ncycle_pot_value = {}\n------------------", *cx.shared.high_pot_value, *cx.shared.low_pot_value, *cx.shared.cycle_pot_value);
-/*
-        hprintln!("low_pot_value = {}", *cx.shared.low_pot_value);
-        hprintln!("cycle_pot_value = {}", *cx.shared.cycle_pot_value);
-         */
+        let data: u16 = cx.local.high_pot_adc.read(cx.local.high_pot_chan).unwrap();
+        hprintln!("adc1: {}", data);
     }
-
+             */
 }
