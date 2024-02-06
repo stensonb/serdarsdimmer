@@ -187,7 +187,7 @@ mod app {
 
             let mut product: u16 = 0;
             if cycle_percentage > 0.0 {
-                product = ((((CYCLE_MAX_TIME_MS - CYCLE_MIN_TIME_MS) as f32) * cycle_percentage) as f32) as u16;
+                product = (((CYCLE_MAX_TIME_MS - CYCLE_MIN_TIME_MS) as f32) * cycle_percentage) as u16;
             }
             hprintln!("time:{}", product + CYCLE_MIN_TIME_MS);
 
