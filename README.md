@@ -17,6 +17,15 @@ coming soon
 | 1 | 120/240v -> 3.3v transformer - use to power the stm32f103c8t6 |
 | 1 | RBD Dimmer AC module - this modules accepts a PWM input, and the average wave-form it interprets is used to pass line-current to the output (RMS) |
 
+### stm32 pins used
+| Pin Label | Description |
+|-----------|-------------|
+| B0 | input for high_pot wiper (with 456 Ohm in serial) |
+| B1 | input for low_pot wiper (with 465 Ohm in serial) |
+| A7 | input for cycle_pot wiper (with 465 Ohm in serial) |
+| A0 | output for PWM value to RBD Dimmer |
+| A1 | input from RBD Dimmer (ZC signal) |
+
 ## Inputs
 
 | Qty | Description |
