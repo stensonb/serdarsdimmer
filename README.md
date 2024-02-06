@@ -52,3 +52,7 @@ On power on, a dimmer cycle loop is started with 1000 steps.
 | Lowest "high" | logically, the "low" reading + 1 |
 | Highest "low" | logically, the "high" reading - 1 |
 | Lowest "low" | 0 (no line current) |
+
+## Testing Pictures
+
+[testing potentiometers](./images/testing-potentiometers.jpg)
