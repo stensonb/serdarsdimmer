@@ -16,6 +16,7 @@ use systick_monotonic::{fugit::Duration, Systick};
 //
 use cortex_m_semihosting::*;
 
+const HIGH_POT_MAX: u16 = 4092; // observed
 const HIGH_POT_SENSITIVITY: u16 = 30; // higher value makes pot less sensitive
 
 #[app(device = stm32f1xx_hal::pac, peripherals = true, dispatchers = [SPI1])]
@@ -146,8 +147,15 @@ mod app {
         let data: u16 = cx.local.high_pot_adc.read(cx.local.high_pot_chan).unwrap();
 
         if (cx.local.high_pot_last_value.abs_diff(data)) > HIGH_POT_SENSITIVITY {
-            *cx.local.high_pot_last_value = data;
-            hprintln!("high_pot_value: {}", data);
+            if data < HIGH_POT_SENSITIVITY {
+                *cx.local.high_pot_last_value = 0;
+            } else if data > (HIGH_POT_MAX - HIGH_POT_SENSITIVITY) {
+                *cx.local.high_pot_last_value = HIGH_POT_MAX;
+            } else {
+                *cx.local.high_pot_last_value = data;
+            }
+
+            hprintln!("high_pot_value: {}", *cx.local.high_pot_last_value);
         }
     }
 }
