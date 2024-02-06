@@ -5,7 +5,8 @@
 
 use panic_rtt_target as _;
 use rtic::app;
-use rtt_target::{debug_rtt_init_print, debug_rprintln};
+use rtt_target::debug_rtt_init_print;
+//, debug_rprintln};
 use stm32f1xx_hal::{adc, pac};
 use stm32f1xx_hal::gpio::{Analog, Pin, PinState};
 
@@ -13,13 +14,14 @@ use stm32f1xx_hal::gpio::{gpioc::PC13, Output, PushPull};
 use stm32f1xx_hal::prelude::*;
 use systick_monotonic::{fugit::Duration, Systick};
 
-//
-use cortex_m_semihosting::*;
+use cortex_m_semihosting::hprintln;
 
 const HIGH_POT_SENSITIVITY: u16 = 30; // higher value makes pot less sensitive
 const LOW_POT_SENSITIVITY: u16 = 30; // higher value makes pot less sensitive
-//const CYCLE_POT_SENSITIVITY: u16 = 30; // higher value makes pot less sensitive
+const CYCLE_POT_SENSITIVITY: u16 = 10; // higher value makes pot less sensitive
 
+const CYCLE_MIN_TIME_MS: u16 = 1_000; // smallest time a complete cycle could take, in seconds (1 second)
+const CYCLE_MAX_TIME_MS: u16 = 60_000; // longest time a complete cycle could take, in seconds (10 minutes)
 
 #[app(device = stm32f1xx_hal::pac, peripherals = true, dispatchers = [SPI1])]
 mod app {
@@ -27,16 +29,6 @@ mod app {
 
     #[shared]
     struct Shared {
-        /*
-        #[lock_free]
-        high_pot_value: bool,  // <- lock-free shared resource
-
-        #[lock_free]
-        low_pot_value: bool,  // <- lock-free shared resource
-
-        #[lock_free]
-        cycle_pot_value: bool,  // <- lock-free shared resource
-        */
     }
 
     #[local]
@@ -44,19 +36,16 @@ mod app {
         led: PC13<Output<PushPull>>,
         state: bool,
 
-        high_pot_adc: adc::Adc<pac::ADC1>,
+        adc: adc::Adc<pac::ADC1>,
+
         high_pot_chan: Pin<'B', 0, Analog>, // b0 on board
         high_pot_last_value: u16,
 
-        low_pot_adc: adc::Adc<pac::ADC2>,
         low_pot_chan: Pin<'B', 1, Analog>, // b1 on board
         low_pot_last_value: u16,
 
-        /*
-        cycle_pot_adc: adc::Adc<pac::ADC3>,
         cycle_pot_chan: Pin<'A', 7, Analog>, // a7 on board
         cycle_pot_last_value: u16,
-         */
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -64,20 +53,15 @@ mod app {
 
     #[init]
     fn init(cx: init::Context) -> (Shared, Local, init::Monotonics) {
-        let p = cx.device;
-
         // Setup clocks
-        let mut flash = p.FLASH.constrain();
-        let rcc = p.RCC.constrain();
+        let mut flash = cx.device.FLASH.constrain();
+        let rcc = cx.device.RCC.constrain();
 
         let mono = Systick::new(cx.core.SYST, 36_000_000);
 
         // todo: where is this printing?!
         debug_rtt_init_print!();
-        debug_rprintln!("init yay");
-
-        // todo: all hprintln!() can go away if we can get rprintln!() to print in openocd console via gdb
-        hprintln!("initializing clocks...");
+        //debug_rprintln!("init yay");
 
         let _clocks = rcc
             .cfgr
@@ -88,17 +72,17 @@ mod app {
             .freeze(&mut flash.acr);
 
         // Setup LED
-        let mut gpioc = p.GPIOC.split();
+        let mut gpioc = cx.device.GPIOC.split();
         let led = gpioc
             .pc13
             .into_push_pull_output_with_state(&mut gpioc.crh, PinState::Low);
 
-        // high_pot setup
         // Setup ADC
-        let high_pot_adc = adc::Adc::adc1(p.ADC1, _clocks);
+        let adc = adc::Adc::adc1(cx.device.ADC1, _clocks);
 
+        // high_pot setup
         // Setup GPIOB
-        let mut gpiob = p.GPIOB.split();
+        let mut gpiob = cx.device.GPIOB.split();
 
         // Configure pb0 as an analog input
         let high_pot_chan = gpiob.pb0.into_analog(&mut gpiob.crl);
@@ -106,69 +90,43 @@ mod app {
         let high_pot_last_value: u16 = 0;
 
         // low_pot setup
-        // Setup ADC
-        let low_pot_adc = adc::Adc::adc2(p.ADC2, _clocks);
-
-        // Setup GPIOB
-        //let mut gpiob = p.GPIOB.split();
+        // re-use gpiob from above
 
         // Configure pb1 as an analog input
         let low_pot_chan = gpiob.pb1.into_analog(&mut gpiob.crl);
 
         let low_pot_last_value: u16 = 0;
 
-        /*
         // cycle_pot setup
-        // Setup ADC
-        let cycle_pot_adc = adc::Adc::adc3(p.ADC3, _clocks);
-
         // Setup GPIOA
-        let mut gpioa = p.GPIOA.split();
+        let mut gpioa = cx.device.GPIOA.split();
 
         // Configure pa7 as an analog input
         let cycle_pot_chan = gpioa.pa7.into_analog(&mut gpioa.crl);
 
         let cycle_pot_last_value: u16 = 0;
-         */
-
-        hprintln!("scheduling tasks...");
 
         // Schedule the blinking task
         blink::spawn_after(Duration::<u64, 1, 1000>::from_ticks(1000)).unwrap();
-
         // schedule printing high_pot_value
         output_pot_values::spawn().unwrap();
 
-
         (
-            Shared {
-                /*
-                high_pot_value: false,
-                low_pot_value: false,
-                cycle_pot_value: false,
-                */
-                /*
-                high_pot_adc: adc1,
-                high_pot_chan: ch0,
- */
-            },
+            Shared {},
             Local {
                 led,
                 state: false,
 
-                high_pot_adc: high_pot_adc,
+                adc: adc,
+
                 high_pot_chan: high_pot_chan,
                 high_pot_last_value: high_pot_last_value,
 
-                low_pot_adc: low_pot_adc,
                 low_pot_chan: low_pot_chan,
                 low_pot_last_value: low_pot_last_value,
 
-                /*
-                cycle_pot_adc: cycle_pot_adc,
                 cycle_pot_chan: cycle_pot_chan,
                 cycle_pot_last_value: cycle_pot_last_value,
- */
             },
             init::Monotonics(mono),
         )
@@ -183,71 +141,75 @@ mod app {
             cx.local.led.set_low();
             *cx.local.state = true;
         }
-        // where 250 * 1 / 1000 = 0.25 seconds
         blink::spawn_after(Duration::<u64, 1, 1000>::from_ticks(250)).unwrap();
     }
 
     #[task(local = [
-        high_pot_adc,
+        adc,
+
         high_pot_chan,
         high_pot_last_value,
-        low_pot_adc,
+
         low_pot_chan,
         low_pot_last_value,
-        /*
-        cycle_pot_adc,
+
         cycle_pot_chan,
         cycle_pot_last_value,
-         */
         ])]
     fn output_pot_values(cx: output_pot_values::Context) {
         // schedule this again here to ignore how long this actually takes
         output_pot_values::spawn_after(Duration::<u64, 1, 1000>::from_ticks(100)).unwrap();
 
-        let high_pot_data: u16 = cx.local.high_pot_adc.read(cx.local.high_pot_chan).unwrap();
-        let low_pot_data: u16 = cx.local.low_pot_adc.read(cx.local.low_pot_chan).unwrap();
-        //let cycle_pot_data: u16 = cx.local.cycle_pot_adc.read(cx.local.cycle_pot_chan).unwrap();
+        let mut changed: bool = false;
 
-        // high_pot_output
-        if (cx.local.high_pot_last_value.abs_diff(high_pot_data)) > HIGH_POT_SENSITIVITY {
-            if high_pot_data < HIGH_POT_SENSITIVITY {
-                *cx.local.high_pot_last_value = 0;
-            } else if high_pot_data > (cx.local.high_pot_adc.max_sample() - HIGH_POT_SENSITIVITY) {
-                *cx.local.high_pot_last_value = cx.local.high_pot_adc.max_sample();
-            } else {
-                *cx.local.high_pot_last_value = high_pot_data;
+        let high_pot_data: u16 = cx.local.adc.read(cx.local.high_pot_chan).unwrap();
+        let low_pot_data: u16 = cx.local.adc.read(cx.local.low_pot_chan).unwrap();
+        let cycle_pot_data: u16 = cx.local.adc.read(cx.local.cycle_pot_chan).unwrap();
+
+        // if any of these changed, changed == true
+        changed |= set_last(cx.local.high_pot_last_value, high_pot_data, HIGH_POT_SENSITIVITY, cx.local.adc.max_sample());
+        changed |= set_last(cx.local.low_pot_last_value, low_pot_data, LOW_POT_SENSITIVITY, cx.local.adc.max_sample());
+        changed |= set_last(cx.local.cycle_pot_last_value, cycle_pot_data, CYCLE_POT_SENSITIVITY, cx.local.adc.max_sample());
+
+        if changed {
+            hprintln!("high_pot:{}, low_pot:{}, cycle_pot:{}", *cx.local.high_pot_last_value, *cx.local.low_pot_last_value, *cx.local.cycle_pot_last_value);
+
+            // must protect against div/0 above
+            // rounding towards zero: https://doc.rust-lang.org/reference/expressions/operator-expr.html#numeric-cast
+
+            // todo: rework this to make pot impact % more at lower levels
+            // time spent is (cycle_pot_val / max_pot_val * (CYCLE_MAX_TIME - CYCLE_MIN_TIME)) + CYCLE_MIN_TIME
+            // if pot_val = 1024, eg. .25233434
+            let cycle_percentage: f32 = (*cx.local.cycle_pot_last_value as f32) / (cx.local.adc.max_sample() as f32);
+
+            hprintln!("pot: {}", *cx.local.cycle_pot_last_value);
+            hprintln!("%: {}", cycle_percentage);
+
+            let mut product: u16 = 0;
+            if cycle_percentage > 0.0 {
+                product = ((((CYCLE_MAX_TIME_MS - CYCLE_MIN_TIME_MS) as f32) * cycle_percentage) as f32) as u16;
             }
+            hprintln!("time:{}", product + CYCLE_MIN_TIME_MS);
 
-            hprintln!("high_pot_value: {}", *cx.local.high_pot_last_value);
+            //hprintln!("%: {}\n-------------------------", (*cx.local.low_pot_last_value + *cx.local.high_pot_last_value + *cx.local.cycle_pot_last_value) as f32);
+
         }
+    }
 
-        // low_pot_output
-        if (cx.local.low_pot_last_value.abs_diff(low_pot_data)) > LOW_POT_SENSITIVITY {
-            if low_pot_data < LOW_POT_SENSITIVITY {
-                *cx.local.low_pot_last_value = 0;
-            } else if low_pot_data > (cx.local.low_pot_adc.max_sample() - LOW_POT_SENSITIVITY) {
-                *cx.local.low_pot_last_value = cx.local.low_pot_adc.max_sample();
+    fn set_last(last: &mut u16, data: u16, sensitivity: u16, max: u16) -> bool {
+        if last.abs_diff(data) > sensitivity {
+            // set min (0) if we're below sensitivity
+            if data < sensitivity {
+                *last = 0;
+            // set max if we're above (max - sensitivity)
+            } else if data > (max - sensitivity) {
+                *last = max;
+            // set data
             } else {
-                *cx.local.low_pot_last_value = low_pot_data;
+                *last = data;
             }
-
-            hprintln!("low_pot_value: {}", *cx.local.low_pot_last_value);
+            return true;
         }
-
-        /*
-        // cycle_pot_output
-        if (cx.local.cycle_pot_last_value.abs_diff(cycle_pot_data)) > CYCLE_POT_SENSITIVITY {
-            if cycle_pot_data < CYCLE_POT_SENSITIVITY {
-                *cx.local.cycle_pot_last_value = 0;
-            } else if cycle_pot_data > (CYCLE_POT_MAX - CYCLE_POT_SENSITIVITY) {
-                *cx.local.cycle_pot_last_value = CYCLE_POT_MAX;
-            } else {
-                *cx.local.cycle_pot_last_value = cycle_pot_data;
-            }
-
-            hprintln!("cycle_pot_value: {}", *cx.local.cycle_pot_last_value);
-        }
-         */
-
+        return false;
     }
 }
